@@ -1,5 +1,6 @@
 import sqlite3
 import os
+from datetime import datetime
 
 def get_db_connection():
     """Get a connection to the SQLite database"""
@@ -22,11 +23,13 @@ def init_db():
         )
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_id ON chat_history (user_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_timestamp ON chat_history (timestamp)')
     conn.commit()
     conn.close()
+    print("Database initialized successfully.")
 
 def save_user_message(user_id, role, message):
-    """Save a user message to the database"""
+    """Save a message to the database"""
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
@@ -43,13 +46,27 @@ def get_user_history(user_id, limit=20):
     cursor.execute('''
         SELECT role, message FROM chat_history
         WHERE user_id = ?
-        ORDER BY timestamp DESC
+        ORDER BY timestamp ASC
         LIMIT ?
     ''', (user_id, limit))
     history = cursor.fetchall()
     history = [{'role': row['role'], 'content': row['message']} for row in history]
     conn.close()
     return history
+
+def get_all_user_history(limit=100):
+    """Retrieve all user message history from the database"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT user_id, role, message, timestamp FROM chat_history
+        ORDER BY timestamp DESC
+        LIMIT ?
+    ''', (limit,))
+    all_history = cursor.fetchall()
+    all_history = [dict(row) for row in all_history]
+    conn.close()
+    return all_history
 
 def clear_user_history(user_id):
     """Clear user message history from the database"""
@@ -58,3 +75,13 @@ def clear_user_history(user_id):
     cursor.execute('DELETE FROM chat_history WHERE user_id = ?', (user_id,))
     conn.commit()
     conn.close()
+    return cursor.rowcount
+
+def clear_all_user_history():
+    """Clear all user message history from the database"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM chat_history')
+    conn.commit()
+    conn.close()
+    return cursor.rowcount
