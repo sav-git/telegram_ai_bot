@@ -85,3 +85,19 @@ def clear_all_user_history():
     conn.commit()
     conn.close()
     return cursor.rowcount
+
+def delete_old_records(days=30):
+    """
+    Delete records older than specified number of days.
+    Returns number of deleted rows.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        'DELETE FROM chat_history WHERE timestamp < datetime("now", ?)',
+        (f'-{days} days',)
+    )
+    deleted = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return deleted

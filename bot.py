@@ -1,7 +1,7 @@
 import os
 import logging
 import asyncio
-from datetime import datetime
+import datetime
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
 from telegram import Update
@@ -102,7 +102,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     try:
         response = await chat_with_gpt(user_message, user_id)
-        await update.message.reply_text(response)
+        # Try to send with Markdown formatting, fallback to plain text on error
+        try:
+            await update.message.reply_text(response, parse_mode='Markdown')
+        except Exception as e:
+            logger.warning(f"Failed to send message with Markdown, sending as plain text. Error: {e}")
+            await update.message.reply_text(response)
     except Exception as e:
         logger.error(f"Error handling message: {e}")
         await update.message.reply_text("An unexpected error occurred. Please try again later.")
@@ -137,6 +142,13 @@ async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     )
 
 
+async def daily_cleanup(context: ContextTypes.DEFAULT_TYPE):
+    """Daily job to delete old records from the database."""
+    loop = asyncio.get_event_loop()
+    deleted = await loop.run_in_executor(None, db.delete_old_records, 30)
+    logger.info(f"Daily cleanup: deleted {deleted} old records.")
+
+
 def main() -> None:
     """Start the bot."""
     if not all([OPENROUTER_API_KEY, TELEGRAM_BOT_TOKEN]):
@@ -145,6 +157,13 @@ def main() -> None:
 
     # Initialize database
     db.init_db()
+
+    # Perform an immediate cleanup on startup (optional)
+    try:
+        deleted = db.delete_old_records(30)
+        logger.info(f"Startup cleanup: deleted {deleted} old records.")
+    except Exception as e:
+        logger.error(f"Startup cleanup failed: {e}")
 
     # Build application
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
@@ -158,6 +177,16 @@ def main() -> None:
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
     )
+
+    # Schedule daily cleanup at 3:00 AM
+    if application.job_queue:
+        application.job_queue.run_daily(
+            daily_cleanup,
+            time=datetime.time(hour=3, minute=0),
+            name="daily_cleanup"
+        )
+    else:
+        logger.warning("JobQueue is not available. Periodic cleanup disabled.")
 
     # Start bot
     logger.info("Starting bot...")
